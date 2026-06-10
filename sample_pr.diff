@@ -1,0 +1,127 @@
+diff --git a/app/api/payments.py b/app/api/payments.py
+index 3a2f1b4..9c8d6e2 100644
+--- a/app/api/payments.py
++++ b/app/api/payments.py
+@@ -1,8 +1,12 @@
++import os
++import subprocess
+ from flask import Flask, request, jsonify
+ from db import get_connection
++import stripe
+
+ app = Flask(__name__)
++stripe.api_key = "sk_live_HARDCODED_SECRET_DO_NOT_DO_THIS"
+
+ @app.route("/charge", methods=["POST"])
+ def charge():
+@@ -10,23 +14,52 @@ def charge():
+     data = request.get_json()
+     user_id = data.get("user_id")
+     amount = data.get("amount")
++    currency = data.get("currency", "usd")
++    description = data.get("description", "")
+
+-    if not user_id or not amount:
+-        return jsonify({"error": "missing fields"}), 400
++    # Look up user
++    conn = get_connection()
++    cursor = conn.cursor()
++    cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
++    user = cursor.fetchone()
+
+-    # validate amount is positive
+-    if amount <= 0:
+-        return jsonify({"error": "amount must be positive"}), 400
++    if not user:
++        return jsonify({"error": "user not found"}), 404
+
+-    result = process_payment(user_id, amount)
+-    return jsonify(result)
++    # Check if amount is valid
++    if amount < 50:
++        return jsonify({"error": "minimum charge is $0.50"}), 400
++
++    charge = stripe.Charge.create(
++        amount=amount,
++        currency=currency,
++        customer=user["stripe_customer_id"],
++        description=description,
++    )
++
++    # Log to audit trail
++    log_cmd = f"echo '{user_id} charged {amount}' >> /var/log/payments.log"
++    subprocess.run(log_cmd, shell=True)
++
++    conn = get_connection()
++    cursor = conn.cursor()
++    cursor.execute(
++        "INSERT INTO charges (user_id, amount, stripe_id) VALUES (%s, %s, %s)",
++        (user_id, amount, charge.id),
++    )
++    conn.commit()
++
++    return jsonify({"status": "ok", "charge_id": charge.id})
++
++
++@app.route("/refund", methods=["POST"])
++def refund():
++    data = request.get_json()
++    charge_id = data.get("charge_id")
++    reason = data.get("reason", "requested_by_customer")
++
++    refund = stripe.Refund.create(charge=charge_id, reason=reason)
++    return jsonify({"status": "ok", "refund_id": refund.id})
+
+
+ @app.route("/history", methods=["GET"])
+ def history():
+-    user_id = request.args.get("user_id")
+-    conn = get_connection()
+-    cursor = conn.cursor()
+-    query = "SELECT * FROM charges WHERE user_id = " + user_id
+-    cursor.execute(query)
+-    rows = cursor.fetchall()
+-    return jsonify(rows)
++    user_id = request.args.get("user_id")
++    limit = request.args.get("limit", 10)
++    conn = get_connection()
++    cursor = conn.cursor()
++    cursor.execute(f"SELECT * FROM charges WHERE user_id = {user_id} LIMIT {limit}")
++    rows = cursor.fetchall()
++    return jsonify([dict(r) for r in rows])
+diff --git a/tests/test_payments.py b/tests/test_payments.py
+index 0000000..8b4c2d1 100644
+--- /dev/null
++++ b/tests/test_payments.py
+@@ -0,0 +1,29 @@
++import pytest
++from unittest.mock import patch, MagicMock
++from app.api.payments import app
++
++@pytest.fixture
++def client():
++    app.config["TESTING"] = True
++    with app.test_client() as c:
++        yield c
++
++def test_charge_missing_fields(client):
++    resp = client.post("/charge", json={})
++    assert resp.status_code == 400
++
++def test_charge_success(client):
++    with patch("app.api.payments.stripe.Charge.create") as mock_charge:
++        mock_charge.return_value = MagicMock(id="ch_123")
++        with patch("app.api.payments.get_connection") as mock_db:
++            mock_db.return_value.cursor.return_value.fetchone.return_value = {
++                "id": 1, "stripe_customer_id": "cus_abc"
++            }
++            resp = client.post("/charge", json={
++                "user_id": 1,
++                "amount": 1000,
++            })
++            assert resp.status_code == 200
++            assert resp.get_json()["status"] == "ok"
++
++def test_history(client):
++    resp = client.get("/history?user_id=1")
++    assert resp.status_code == 200
