@@ -24,7 +24,7 @@ A working demo of the **orchestrator/sub-agent pattern** from the Claude Code Su
 
 ---
 
-## Quickstart — no API key needed
+## Quickstart
 
 ```bash
 # 1. Clone
