@@ -52,6 +52,19 @@ Claude Code reads `CLAUDE.md`, spawns the three specialists in parallel via the 
 /review path/to/changes.diff
 ```
 
+### Review your local changes
+
+```bash
+# Save your uncommitted changes as a diff
+git diff > changes.diff
+
+# Or compare against a branch
+git diff main..my-branch > changes.diff
+
+# Then inside Claude Code
+/review changes.diff
+```
+
 ### Review a GitHub PR
 
 ```bash
