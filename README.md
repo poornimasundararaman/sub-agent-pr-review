@@ -28,8 +28,8 @@ A working demo of the **orchestrator/sub-agent pattern** from the Claude Code Su
 
 ```bash
 # 1. Clone
-git clone https://github.com/<your-handle>/pr-review-agents.git
-cd pr-review-agents
+git clone https://github.com/poornimasundararaman/sub-agent-pr-review.git
+cd sub-agent-pr-review
 
 # 2. Start Claude Code
 claude
@@ -62,15 +62,6 @@ gh pr diff 42 --repo owner/repo > pr42.diff
 /review pr42.diff
 ```
 
-### Wire into CI (with API key)
-
-```bash
-pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
-python orchestrator.py --pr owner/repo 42 --output report.md
-gh pr comment 42 --body-file report.md
-```
-
 ---
 
 ## What the sample diff contains
@@ -100,21 +91,18 @@ gh pr comment 42 --body-file report.md
 
 1. **Edit `CLAUDE.md`** to adjust specialist roles, output format, or P0 criteria for your stack.
 2. **Add specialists**: copy one of the role prompts in `CLAUDE.md` and add a new Task spawn in `.claude/commands/review.md`.
-3. **Wire into CI**: use `orchestrator.py` (Anthropic SDK, requires API key) for automated pipeline runs.
 
 ---
 
 ## File layout
 
 ```
-pr-review-agents/
+sub-agent-pr-review/
 ├── CLAUDE.md                     ← Orchestrator instructions + specialist prompts (auto-loaded)
 ├── .claude/
 │   └── commands/
 │       └── review.md             ← /review slash command
-├── orchestrator.py               ← SDK version for CI (requires ANTHROPIC_API_KEY)
 ├── sample_pr.diff                ← Realistic payments service with intentional bugs
-├── requirements.txt              ← anthropic SDK (only needed for orchestrator.py)
 └── README.md
 ```
 
@@ -124,4 +112,3 @@ pr-review-agents/
 
 - Specialists share no context with each other — all coordination flows through the orchestrator (by design).
 - Very large diffs (>100KB) may approach context limits; consider splitting by file.
-- The `/review` slash command runs interactively inside Claude Code; use `orchestrator.py` for non-interactive CI runs.
